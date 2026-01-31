@@ -41,9 +41,18 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const response = await api.auth.login(email, password)
-      const { access_token, user } = response.data
+      // First, get the access token
+      const loginResponse = await api.auth.login(email, password)
+      const { access_token } = loginResponse.data
 
+      // Store token temporarily to make authenticated request
+      localStorage.setItem("access_token", access_token)
+
+      // Fetch user data
+      const meResponse = await api.auth.me()
+      const user = meResponse.data
+
+      // Complete login
       login(user, access_token)
 
       toast({
