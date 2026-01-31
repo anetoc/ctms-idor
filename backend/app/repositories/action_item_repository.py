@@ -38,7 +38,7 @@ class ActionItemRepository(BaseRepository[ActionItem, ActionItemCreate, ActionIt
                 selectinload(ActionItem.assignee),
                 selectinload(ActionItem.creator),
                 selectinload(ActionItem.verifier),
-                selectinload(ActionItem.updates),
+                selectinload(ActionItem.updates).selectinload(ActionItemUpdate.user),
             )
             .where(ActionItem.id == id)
         )

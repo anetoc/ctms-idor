@@ -33,54 +33,58 @@ const STATUS_COLORS = {
   done: "#22c55e",
 }
 
+interface DashboardKPIs {
+  overdue_count: number
+  aging_p90_days: number | null
+  total_items: number
+  sla_compliance_pct: number
+  items_by_severity: Record<string, number>
+  items_created_last_7_days: number
+  items_resolved_last_7_days: number
+}
+
+interface ParetoItem {
+  category: string
+  count: number
+  percentage: number
+  cumulative_percentage: number
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
+  const [pareto, setPareto] = useState<ParetoItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchData = async () => {
       try {
-        const response = await api.dashboard.getStats()
-        setStats(response.data)
-      } catch (error) {
-        console.error("Failed to fetch dashboard stats:", error)
-        // Use mock data for development
+        const [kpisRes, paretoRes, actionItemsStatsRes] = await Promise.all([
+          api.dashboard.getKpis(),
+          api.dashboard.getPareto(),
+          api.actionItems.getStats(),
+        ])
+        setKpis(kpisRes.data)
+        setPareto(paretoRes.data)
+
+        // Transform data to DashboardStats format for StatsCards
         setStats({
-          total_action_items: 47,
-          overdue_count: 8,
-          aging_p90_days: 12,
-          sla_compliance_percent: 82,
-          by_status: {
-            new: 15,
-            in_progress: 18,
-            waiting_external: 9,
-            done: 5,
-            cancelled: 0,
-          },
-          by_category: {
-            regulatory_finding: 12,
-            protocol_deviation: 8,
-            safety_report: 5,
-            document_pending: 10,
-            training_required: 4,
-            site_issue: 3,
-            sponsor_request: 3,
-            internal_task: 2,
-            other: 0,
-          },
-          by_severity: {
-            critical: 6,
-            major: 15,
-            minor: 18,
-            info: 8,
-          },
+          total_action_items: kpisRes.data.total_items,
+          overdue_count: kpisRes.data.overdue_count,
+          aging_p90_days: kpisRes.data.aging_p90_days || 0,
+          sla_compliance_percent: kpisRes.data.sla_compliance_pct,
+          by_status: actionItemsStatsRes.data.by_status || {},
+          by_category: actionItemsStatsRes.data.by_category || {},
+          by_severity: kpisRes.data.items_by_severity,
         })
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error)
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchStats()
+    fetchData()
   }, [])
 
   // Prepare chart data
@@ -102,18 +106,12 @@ export default function DashboardPage() {
         }))
     : []
 
-  const categoryData = stats
-    ? Object.entries(stats.by_category)
-        .filter(([_, value]) => value > 0)
-        .map(([name, value]) => ({
-          name: name
-            .replace(/_/g, " ")
-            .replace(/\b\w/g, (l) => l.toUpperCase()),
-          value,
-        }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 6)
-    : []
+  const categoryData = pareto.map((item) => ({
+    name: item.category
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase()),
+    value: item.count,
+  }))
 
   return (
     <div className="flex flex-col h-full">

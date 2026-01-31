@@ -30,9 +30,16 @@ router = APIRouter(prefix="/action-items", tags=["Action Items"])
 
 def build_action_item_response(
     item: ActionItem,
-    include_relations: bool = False,
+    include_study_assignee: bool = False,
+    include_updates: bool = False,
 ) -> ActionItemResponse:
-    """Build ActionItemResponse from ActionItem model."""
+    """Build ActionItemResponse from ActionItem model.
+
+    Args:
+        item: The ActionItem model instance
+        include_study_assignee: Include study and assignee info (must be eagerly loaded)
+        include_updates: Include audit trail updates (must be eagerly loaded with user)
+    """
     response = ActionItemResponse(
         id=item.id,
         study_id=item.study_id,
@@ -57,7 +64,7 @@ def build_action_item_response(
         days_until_deadline=sla_engine.days_until_deadline(item),
     )
 
-    if include_relations:
+    if include_study_assignee:
         if item.assignee:
             response.assignee = AssigneeResponse(
                 id=item.assignee.id,
@@ -70,12 +77,16 @@ def build_action_item_response(
                 protocol_number=item.study.protocol_number,
                 short_name=item.study.short_name,
             )
-        if item.updates:
+
+    if include_updates:
+        # Only access updates if they were eagerly loaded
+        updates_list = getattr(item, '_sa_instance_state').dict.get('updates')
+        if updates_list is not None:
             response.updates = [
                 ActionItemUpdateResponse(
                     id=u.id,
                     user_id=u.user_id,
-                    user_name=u.user.name if u.user else None,
+                    user_name=u.user.name if hasattr(u, 'user') and u.user else None,
                     field_changed=u.field_changed,
                     old_value=u.old_value,
                     new_value=u.new_value,
@@ -131,7 +142,7 @@ async def list_action_items(
     pages = (total + page_size - 1) // page_size if total > 0 else 1
 
     return ActionItemList(
-        items=[build_action_item_response(item, include_relations=True) for item in items],
+        items=[build_action_item_response(item, include_study_assignee=True, include_updates=False) for item in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -173,7 +184,7 @@ async def get_action_item(
             detail="Action item not found",
         )
 
-    return build_action_item_response(item, include_relations=True)
+    return build_action_item_response(item, include_study_assignee=True, include_updates=True)
 
 
 @router.post("", response_model=ActionItemResponse, status_code=status.HTTP_201_CREATED)
@@ -314,7 +325,7 @@ async def update_action_item(
 
     # Reload with relations
     item = await action_item_repository.get_with_relations(db, item_id)
-    return build_action_item_response(item, include_relations=True)
+    return build_action_item_response(item, include_study_assignee=True, include_updates=True)
 
 
 @router.patch("/{item_id}/status", response_model=ActionItemResponse)
