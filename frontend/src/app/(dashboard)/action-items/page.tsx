@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { Header } from "@/components/layout/header"
 import { KanbanBoard } from "@/components/action-items/kanban-board"
 import { FiltersSidebar } from "@/components/action-items/filters-sidebar"
+import { ActionItemDialog } from "@/components/action-items/action-item-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -245,28 +247,47 @@ const mockUsers: User[] = [
 ]
 
 export default function ActionItemsPage() {
-  const { setItems, setLoading, items } = useActionItemsStore()
+  const searchParams = useSearchParams()
+  const studyParam = searchParams.get("study")
+  const itemParam = searchParams.get("item")
+
+  const { setItems, setLoading, items, addItem, updateItem } = useActionItemsStore()
   const [studies, setStudies] = useState<Study[]>(mockStudies)
   const [users, setUsers] = useState<User[]>(mockUsers)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<ActionItem | null>(null)
   const { toast } = useToast()
 
   const fetchData = async () => {
     setLoading(true)
     try {
       // Try to fetch from API
+      const params: Record<string, unknown> = {}
+      if (studyParam) {
+        params.study_id = studyParam
+      }
+
       const [itemsRes, studiesRes, usersRes] = await Promise.all([
-        api.actionItems.list(),
+        api.actionItems.list(params),
         api.studies.list(),
         api.users.list(),
       ])
-      setItems(itemsRes.data.data || itemsRes.data)
-      setStudies(studiesRes.data.data || studiesRes.data)
-      setUsers(usersRes.data.data || usersRes.data)
+      const itemsData = itemsRes.data.data || itemsRes.data
+      const studiesData = studiesRes.data.data || studiesRes.data
+      const usersData = usersRes.data.data || usersRes.data
+
+      setItems(Array.isArray(itemsData) ? itemsData : [])
+      setStudies(Array.isArray(studiesData) ? studiesData : mockStudies)
+      setUsers(Array.isArray(usersData) ? usersData : mockUsers)
     } catch (error) {
       // Use mock data in development
       console.log("Using mock data for development")
-      setItems(mockActionItems)
+      let filteredItems = mockActionItems
+      if (studyParam) {
+        filteredItems = mockActionItems.filter((item) => item.study_id === studyParam)
+      }
+      setItems(filteredItems)
       setStudies(mockStudies)
       setUsers(mockUsers)
     } finally {
@@ -276,7 +297,18 @@ export default function ActionItemsPage() {
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [studyParam])
+
+  // Open item from URL param
+  useEffect(() => {
+    if (itemParam && items.length > 0) {
+      const item = items.find((i) => i.id === itemParam)
+      if (item) {
+        setEditingItem(item)
+        setDialogOpen(true)
+      }
+    }
+  }, [itemParam, items])
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -289,13 +321,37 @@ export default function ActionItemsPage() {
   }
 
   const handleItemClick = (item: ActionItem) => {
-    // TODO: Open detail modal/drawer
-    console.log("Item clicked:", item)
-    toast({
-      title: item.title,
-      description: `Status: ${item.status} | Severidade: ${item.severity}`,
-    })
+    setEditingItem(item)
+    setDialogOpen(true)
   }
+
+  const handleNewItem = () => {
+    setEditingItem(null)
+    setDialogOpen(true)
+  }
+
+  const handleDialogSuccess = (savedItem: ActionItem) => {
+    if (editingItem) {
+      // Update existing item
+      updateItem(savedItem.id, savedItem)
+    } else {
+      // Add new item
+      addItem(savedItem)
+    }
+    setEditingItem(null)
+  }
+
+  const handleDialogClose = (open: boolean) => {
+    setDialogOpen(open)
+    if (!open) {
+      setEditingItem(null)
+    }
+  }
+
+  // Get current study for filtering context
+  const currentStudy = studyParam
+    ? studies.find((s) => s.id === studyParam)
+    : null
 
   return (
     <div className="flex flex-col h-full">
@@ -310,6 +366,11 @@ export default function ActionItemsPage() {
               <h2 className="text-lg font-semibold">
                 Kanban Board ({items.length} itens)
               </h2>
+              {currentStudy && (
+                <span className="text-sm text-muted-foreground">
+                  - {currentStudy.short_title}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
@@ -325,7 +386,7 @@ export default function ActionItemsPage() {
                 Atualizar
               </Button>
 
-              <Button size="sm">
+              <Button size="sm" onClick={handleNewItem}>
                 <Plus className="h-4 w-4 mr-2" />
                 Novo Item
               </Button>
@@ -360,6 +421,16 @@ export default function ActionItemsPage() {
           <FiltersSidebar studies={studies} users={users} />
         </aside>
       </div>
+
+      {/* Action Item Dialog */}
+      <ActionItemDialog
+        open={dialogOpen}
+        onOpenChange={handleDialogClose}
+        actionItem={editingItem}
+        studies={studies}
+        defaultStudyId={studyParam || undefined}
+        onSuccess={handleDialogSuccess}
+      />
     </div>
   )
 }

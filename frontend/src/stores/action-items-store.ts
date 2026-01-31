@@ -130,7 +130,7 @@ export const useFilteredActionItems = () => {
 }
 
 // Group items by status for Kanban
-export const useItemsByStatus = () => {
+export const useItemsByStatus = (): Record<string, ActionItem[]> => {
   const items = useFilteredActionItems()
 
   return {
@@ -138,5 +138,6 @@ export const useItemsByStatus = () => {
     in_progress: items.filter((item) => item.status === "in_progress"),
     waiting_external: items.filter((item) => item.status === "waiting_external"),
     done: items.filter((item) => item.status === "done"),
+    cancelled: items.filter((item) => item.status === "cancelled"),
   }
 }
